@@ -1,154 +1,41 @@
-name: iOS - Build IPA (auto-create iOS if missing)
+name: iOS-ipa-build
 
 on:
   workflow_dispatch:
 
 jobs:
   build-ios:
+    name: 🎉 iOS Build
     runs-on: macos-latest
-    timeout-minutes: 60
-
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          channel: 'stable'
           architecture: x64
+      - run: flutter pub get
 
-      - name: Pub get
-        run: flutter pub get
-
-      - name: Ensure iOS platform / Podfile exists
-        run: |
-          echo "PWD: $(pwd)"
-          # اگر پوشه ios یا Podfile وجود ندارد، از flutter create برای iOS استفاده می‌کنیم
-          if [ ! -d ios ] || [ ! -f ios/Podfile ]; then
-            echo "iOS folder or Podfile not found — creating iOS platform and Podfile"
-            flutter create --platforms=ios .
-          else
-            echo "ios/ folder exists"
-          fi
-
-          # در بعضی پروژه‌ها ممکن است پوشه ios وجود داشته باشد اما Podfile نداشته باشد.
-          # اگر Podfile وجود نداشت، یک Podfile استاندارد مخصوص Flutter ایجاد می‌کنیم.
-          if [ ! -f ios/Podfile ]; then
-            echo "Podfile not found — writing a standard Flutter Podfile"
-            cat > ios/Podfile <<'POD'
-platform :ios, '11.0'
-ENV['COCOAPODS_DISABLE_STATS'] = 'true'
-
-project 'Runner', {
-  'Debug' => :debug,
-  'Profile' => :release,
-  'Release' => :release,
-}
-
-# This loads the helper that Flutter generates under ios/Flutter/podhelper.rb
-require File.expand_path('../Flutter/podhelper', __FILE__)
-
-target 'Runner' do
-  use_frameworks!
-  use_modular_headers!
-
-  flutter_install_all_ios_pods(File.dirname(File.realpath(__FILE__)))
-end
-
-post_install do |installer|
-  installer.pods_project.targets.each do |target|
-    flutter_additional_ios_build_settings(target)
-  end
-end
-POD
-            echo "Wrote ios/Podfile"
-          else
-            echo "ios/Podfile already exists"
-          fi
-
-          echo "List ios/ contents:"
-          ls -la ios || true
-
-      - name: Ensure CocoaPods is installed
-        run: |
-          if ! command -v pod >/dev/null 2>&1; then
-            echo "CocoaPods not found — installing via gem"
-            sudo gem install cocoapods
-          fi
-          echo "pod version:"
-          pod --version
-
-      - name: Install pods (in ios)
+      - run: pod repo update
         working-directory: ios
-        run: |
-          set -o pipefail
-          # به‌روز رسانی repo (اگر لازم باشد) سپس نصب pods
-          pod repo update --silent || true
-          pod install --verbose
 
-      - name: Ensure ExportOptions.plist exists
-        run: |
-          if [ ! -f ios/ExportOptions.plist ]; then
-            echo '<?xml version="1.0" encoding="UTF-8"?>' > ios/ExportOptions.plist
-            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> ios/ExportOptions.plist
-            echo '<plist version="1.0">' >> ios/ExportOptions.plist
-            echo '<dict>' >> ios/ExportOptions.plist
-            echo '  <key>method</key>' >> ios/ExportOptions.plist
-            echo '  <string>development</string>' >> ios/ExportOptions.plist
-            echo '  <key>signingStyle</key>' >> ios/ExportOptions.plist
-            echo '  <string>automatic</string>' >> ios/ExportOptions.plist
-            echo '  <key>compileBitcode</key>' >> ios/ExportOptions.plist
-            echo '  <false/>' >> ios/ExportOptions.plist
-            echo '</dict>' >> ios/ExportOptions.plist
-            echo '</plist>' >> ios/ExportOptions.plist
-            echo "Created ios/ExportOptions.plist"
-          else
-            echo "ios/ExportOptions.plist already exists"
-          fi
+      - run: flutter build ios --release --no-codesign
 
-      - name: Clean & Build IPA (no codesign)
-        run: |
-          flutter clean
-          flutter pub get
-          flutter build ipa --no-codesign --export-options-plist=ios/ExportOptions.plist
+      - run: mkdir Payload
+        working-directory: build/ios/iphoneos
 
-      - name: Show build outputs
-        run: |
-          ls -la build/ios || true
-          ls -la build/ios/iphoneos || true
+      - run: mv Runner.app/ Payload
+        working-directory: build/ios/iphoneos
 
-      - name: Inspect Runner.app
-        run: |
-          if [ -d build/ios/iphoneos/Runner.app ]; then
-            echo "Runner.app exists"
-            ls -la build/ios/iphoneos/Runner.app | head -n 50
-          else
-            echo "Runner.app not found"
-          fi
+      - name: Zip output
+        run: zip -qq -r -9 FlutterIpaExport.ipa Payload
+        working-directory: build/ios/iphoneos
 
-      - name: Package IPA fallback
-        run: |
-          IPA_FILES=$(ls build/ios/ipa/*.ipa 2>/dev/null || true)
-          if [ -n "$IPA_FILES" ]; then
-            echo "IPA already created by flutter"
-            ls -la build/ios/ipa || true
-          elif [ -d build/ios/iphoneos/Runner.app ]; then
-            cd build/ios/iphoneos
-            mkdir -p Payload
-            mv -f Runner.app Payload/
-            zip -qq -r -9 FlutterIpaExport.ipa Payload
-            echo "Created FlutterIpaExport.ipa"
-            ls -lh FlutterIpaExport.ipa
-            cd -
-          else
-            echo "No Runner.app found to package"
-          fi
-
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: ios-ipa
-          path: |
-            build/ios/ipa/*.ipa
-            build/ios/iphoneos/FlutterIpaExport.ipa
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/ios/iphoneos/FlutterIpaExport.ipa
+          tag: v2.0
+          overwrite: true
+          body: "This is first release"
