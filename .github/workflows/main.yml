@@ -24,12 +24,50 @@ jobs:
       - name: Ensure iOS platform / Podfile exists
         run: |
           echo "PWD: $(pwd)"
+          # اگر پوشه ios یا Podfile وجود ندارد، از flutter create برای iOS استفاده می‌کنیم
           if [ ! -d ios ] || [ ! -f ios/Podfile ]; then
-            echo "iOS folder or Podfile not found — running flutter create for iOS platform"
+            echo "iOS folder or Podfile not found — creating iOS platform and Podfile"
             flutter create --platforms=ios .
           else
-            echo "ios/ and Podfile found"
+            echo "ios/ folder exists"
           fi
+
+          # در بعضی پروژه‌ها ممکن است پوشه ios وجود داشته باشد اما Podfile نداشته باشد.
+          # اگر Podfile وجود نداشت، یک Podfile استاندارد مخصوص Flutter ایجاد می‌کنیم.
+          if [ ! -f ios/Podfile ]; then
+            echo "Podfile not found — writing a standard Flutter Podfile"
+            cat > ios/Podfile <<'POD'
+platform :ios, '11.0'
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+# This loads the helper that Flutter generates under ios/Flutter/podhelper.rb
+require File.expand_path('../Flutter/podhelper', __FILE__)
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods(File.dirname(File.realpath(__FILE__)))
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+  end
+end
+POD
+            echo "Wrote ios/Podfile"
+          else
+            echo "ios/Podfile already exists"
+          fi
+
+          echo "List ios/ contents:"
           ls -la ios || true
 
       - name: Ensure CocoaPods is installed
@@ -38,12 +76,14 @@ jobs:
             echo "CocoaPods not found — installing via gem"
             sudo gem install cocoapods
           fi
+          echo "pod version:"
           pod --version
 
-      - name: Install pods
+      - name: Install pods (in ios)
         working-directory: ios
         run: |
           set -o pipefail
+          # به‌روز رسانی repo (اگر لازم باشد) سپس نصب pods
           pod repo update --silent || true
           pod install --verbose
 
@@ -92,7 +132,7 @@ jobs:
           IPA_FILES=$(ls build/ios/ipa/*.ipa 2>/dev/null || true)
           if [ -n "$IPA_FILES" ]; then
             echo "IPA already created by flutter"
-            ls -la build/ios/ipa
+            ls -la build/ios/ipa || true
           elif [ -d build/ios/iphoneos/Runner.app ]; then
             cd build/ios/iphoneos
             mkdir -p Payload
@@ -112,4 +152,3 @@ jobs:
           path: |
             build/ios/ipa/*.ipa
             build/ios/iphoneos/FlutterIpaExport.ipa
-
