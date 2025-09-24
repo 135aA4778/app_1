@@ -1,7 +1,7 @@
 name: iOS - Build IPA (auto-create iOS if missing)
 
 on:
-  workflow_dispatch:  # این یعنی می‌توانید workflow را دستی اجرا کنید از GitHub
+  workflow_dispatch:
 
 jobs:
   build-ios:
@@ -30,7 +30,6 @@ jobs:
           else
             echo "ios/ and Podfile found"
           fi
-          echo "List ios/ contents:"
           ls -la ios || true
 
       - name: Ensure CocoaPods is installed
@@ -39,7 +38,6 @@ jobs:
             echo "CocoaPods not found — installing via gem"
             sudo gem install cocoapods
           fi
-          echo "pod version:"
           pod --version
 
       - name: Install pods
@@ -80,9 +78,7 @@ EOF
 
       - name: Show build outputs
         run: |
-          echo "=== build/ios listing ==="
           ls -la build/ios || true
-          echo "=== build/ios/iphoneos listing ==="
           ls -la build/ios/iphoneos || true
 
       - name: Inspect Runner.app
@@ -96,22 +92,21 @@ EOF
 
       - name: Package IPA fallback
         run: |
-          # اگر flutter مستقیم ipa نساخته باشد
-          if compgen -G "build/ios/ipa/*.ipa" > /dev/null; then
+          # از روش کاملاً امن بدون آرایه و wildcard مستقیم استفاده می‌کنیم
+          IPA_FILES=$(ls build/ios/ipa/*.ipa 2>/dev/null || true)
+          if [ -n "$IPA_FILES" ]; then
             echo "IPA already created by flutter"
             ls -la build/ios/ipa
+          elif [ -d build/ios/iphoneos/Runner.app ]; then
+            cd build/ios/iphoneos
+            mkdir -p Payload
+            mv -f Runner.app Payload/
+            zip -qq -r -9 FlutterIpaExport.ipa Payload
+            echo "Created FlutterIpaExport.ipa"
+            ls -lh FlutterIpaExport.ipa
+            cd -
           else
-            if [ -d build/ios/iphoneos/Runner.app ]; then
-              cd build/ios/iphoneos
-              mkdir -p Payload
-              mv -f Runner.app Payload/
-              zip -qq -r -9 FlutterIpaExport.ipa Payload
-              echo "Created FlutterIpaExport.ipa"
-              ls -lh FlutterIpaExport.ipa
-              cd -
-            else
-              echo "No Runner.app found to package"
-            fi
+            echo "No Runner.app found to package"
           fi
 
       - name: Upload IPA artifact
