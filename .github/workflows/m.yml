@@ -50,21 +50,18 @@ jobs:
       - name: Ensure ExportOptions.plist exists
         run: |
           if [ ! -f ios/ExportOptions.plist ]; then
-            cat > ios/ExportOptions.plist <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>development</string>
-  <key>signingStyle</key>
-  <string>automatic</string>
-  <key>compileBitcode</key>
-  <false/>
-</dict>
-</plist>
-EOF
+            echo '<?xml version="1.0" encoding="UTF-8"?>' > ios/ExportOptions.plist
+            echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> ios/ExportOptions.plist
+            echo '<plist version="1.0">' >> ios/ExportOptions.plist
+            echo '<dict>' >> ios/ExportOptions.plist
+            echo '  <key>method</key>' >> ios/ExportOptions.plist
+            echo '  <string>development</string>' >> ios/ExportOptions.plist
+            echo '  <key>signingStyle</key>' >> ios/ExportOptions.plist
+            echo '  <string>automatic</string>' >> ios/ExportOptions.plist
+            echo '  <key>compileBitcode</key>' >> ios/ExportOptions.plist
+            echo '  <false/>' >> ios/ExportOptions.plist
+            echo '</dict>' >> ios/ExportOptions.plist
+            echo '</plist>' >> ios/ExportOptions.plist
             echo "Created ios/ExportOptions.plist"
           else
             echo "ios/ExportOptions.plist already exists"
@@ -92,7 +89,6 @@ EOF
 
       - name: Package IPA fallback
         run: |
-          # از روش کاملاً امن بدون آرایه و wildcard مستقیم استفاده می‌کنیم
           IPA_FILES=$(ls build/ios/ipa/*.ipa 2>/dev/null || true)
           if [ -n "$IPA_FILES" ]; then
             echo "IPA already created by flutter"
