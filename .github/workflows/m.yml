@@ -76,7 +76,6 @@ EOF
         run: |
           flutter clean
           flutter pub get
-          # Build IPA (no-codesign). Output will be in build/ios/ipa or build/ios/iphoneos depending on flutter version.
           flutter build ipa --no-codesign --export-options-plist=ios/ExportOptions.plist
 
       - name: Show build outputs (debug)
@@ -106,8 +105,9 @@ EOF
 
       - name: Package IPA fallback (if flutter didn't produce ipa directly)
         run: |
-          # if flutter didn't create a direct ipa but Runner.app exists, make one
-          if [ -f build/ios/ipa/*.ipa ]; then
+          shopt -s nullglob
+          IPA_FILES=(build/ios/ipa/*.ipa)
+          if [ ${#IPA_FILES[@]} -gt 0 ]; then
             echo "IPA already created by flutter build ipa"
             ls -la build/ios/ipa || true
           else
@@ -131,9 +131,3 @@ EOF
           path: |
             build/ios/ipa/*.ipa
             build/ios/iphoneos/FlutterIpaExport.ipa
-
-      # Optional: upload to GitHub Release (uncomment and set tag if you want)
-      #- name: Upload to Release
-      #  uses: svenstaro/upload-release-action@v2
-      #  with:
-      #    repo_token: ${{ secrets.GITHUB_
