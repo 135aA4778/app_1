@@ -1,7 +1,7 @@
 name: iOS - Build IPA (auto-create iOS if missing)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # این یعنی می‌توانید workflow را دستی اجرا کنید از GitHub
 
 jobs:
   build-ios:
@@ -28,3 +28,96 @@ jobs:
             echo "iOS folder or Podfile not found — running flutter create for iOS platform"
             flutter create --platforms=ios .
           else
+            echo "ios/ and Podfile found"
+          fi
+          echo "List ios/ contents:"
+          ls -la ios || true
+
+      - name: Ensure CocoaPods is installed
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            echo "CocoaPods not found — installing via gem"
+            sudo gem install cocoapods
+          fi
+          echo "pod version:"
+          pod --version
+
+      - name: Install pods
+        working-directory: ios
+        run: |
+          set -o pipefail
+          pod repo update --silent || true
+          pod install --verbose
+
+      - name: Ensure ExportOptions.plist exists
+        run: |
+          if [ ! -f ios/ExportOptions.plist ]; then
+            cat > ios/ExportOptions.plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>development</string>
+  <key>signingStyle</key>
+  <string>automatic</string>
+  <key>compileBitcode</key>
+  <false/>
+</dict>
+</plist>
+EOF
+            echo "Created ios/ExportOptions.plist"
+          else
+            echo "ios/ExportOptions.plist already exists"
+          fi
+
+      - name: Clean & Build IPA (no codesign)
+        run: |
+          flutter clean
+          flutter pub get
+          flutter build ipa --no-codesign --export-options-plist=ios/ExportOptions.plist
+
+      - name: Show build outputs
+        run: |
+          echo "=== build/ios listing ==="
+          ls -la build/ios || true
+          echo "=== build/ios/iphoneos listing ==="
+          ls -la build/ios/iphoneos || true
+
+      - name: Inspect Runner.app
+        run: |
+          if [ -d build/ios/iphoneos/Runner.app ]; then
+            echo "Runner.app exists"
+            ls -la build/ios/iphoneos/Runner.app | head -n 50
+          else
+            echo "Runner.app not found"
+          fi
+
+      - name: Package IPA fallback
+        run: |
+          # اگر flutter مستقیم ipa نساخته باشد
+          if compgen -G "build/ios/ipa/*.ipa" > /dev/null; then
+            echo "IPA already created by flutter"
+            ls -la build/ios/ipa
+          else
+            if [ -d build/ios/iphoneos/Runner.app ]; then
+              cd build/ios/iphoneos
+              mkdir -p Payload
+              mv -f Runner.app Payload/
+              zip -qq -r -9 FlutterIpaExport.ipa Payload
+              echo "Created FlutterIpaExport.ipa"
+              ls -lh FlutterIpaExport.ipa
+              cd -
+            else
+              echo "No Runner.app found to package"
+            fi
+          fi
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: |
+            build/ios/ipa/*.ipa
+            build/ios/iphoneos/FlutterIpaExport.ipa
